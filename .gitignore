@@ -1,0 +1,147 @@
+# ══════════════════════════════════════════════════════════════════════
+#  SEGREDOS — nunca comitar, nunca versionar
+# ══════════════════════════════════════════════════════════════════════
+# A regra real e uma: o arquivo com a chave nao entra. O padrao abaixo
+# cobre .env e variantes; o resto e rede de seguranca para o caso de alguem
+# criar `.env.local`, `.env.production` ou `secrets.yaml` sem pensar.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+secrets.yaml
+secrets.yml
+.gcp/
+
+# ══════════════════════════════════════════════════════════════════════
+#  LOGS E CAPTURAS DE TERMINAL
+# ══════════════════════════════════════════════════════════════════════
+# `blog_agent.txt` e a razao deste bloco existir: 70 MB de capture de `adk run`,
+# gerado durante o desenvolvimento. Ele contem o output do modelo, que por sua
+# vez pode echoingar variavel de ambiente, header e URL assinada. Log nao e
+# dado — e publishavel por acidente.
+*.log
+*.txt
+!requirements*.txt
+blog_agent.txt
+logs/
+*.out
+nohup.out
+
+# ══════════════════════════════════════════════════════════════════════
+#  PYTHON
+# ══════════════════════════════════════════════════════════════════════
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+share/python-wheels/
+pip-wheel-metadata/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+.envrc
+.direnv/
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+
+# ══════════════════════════════════════════════════════════════════════
+#  GOOGLE ADK
+# ══════════════════════════════════════════════════════════════════════
+# `.adk/` sem barra inicial casa em QUALQUER nivel — cobre tambem
+# `blogger/.adk/`, `triage/.adk/` etc. O session.db guarda o historico de
+# conversa e o state serializado: se alguem colou um post real ou uma URL
+# privada ali dentro, isso vaza com o repo.
+.adk/
+*.session.db
+session.db
+
+# Cache de descoberta de agentes
+.adk_app/
+agents.json
+
+# ══════════════════════════════════════════════════════════════════════
+#  AGENTES: indice vetorial e estado local
+# ══════════════════════════════════════════════════════════════════════
+# Recriavel com `adk run rag "indexar ."` — nao vale o risco de comitar
+# binario e o conteudo dos seus documentos indexados.
+rag/.indice/
+.indice/
+*.chroma/
+chroma.sqlite3
+
+# ══════════════════════════════════════════════════════════════════════
+#  CHROMADB / BANCO
+# ══════════════════════════════════════════════════════════════════════
+*.sqlite3
+*.sqlite
+*.db
+!tests/**/*.db
+
+# ══════════════════════════════════════════════════════════════════════
+#  NODE (o MCP da busca do Google roda via `npx`)
+# ══════════════════════════════════════════════════════════════════════
+node_modules/
+package-lock.json
+yarn.lock
+.npm/
+.npx-cache/
+
+# ══════════════════════════════════════════════════════════════════════
+#  RAG / embeddings / cache de modelo
+# ══════════════════════════════════════════════════════════════════════
+# Cache local do sentence-transformers e o ONNX que o Chroma baixa por
+# conta propria (79 MB) quando alguem chama query_texts= sem passar embedding.
+.cache/
+*.onnx
+*.bin
+.cache/huggingface/
+
+# ══════════════════════════════════════════════════════════════════════
+#  IDE / SO / EDITORES
+# ══════════════════════════════════════════════════════════════════════
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+*.sublime-*
+
+# ══════════════════════════════════════════════════════════════════════
+#  TEMPORARIOS
+# ══════════════════════════════════════════════════════════════════════
+tmp/
+temp/
+scratch/
+*.bak
+*.orig
+*.rej
+*~

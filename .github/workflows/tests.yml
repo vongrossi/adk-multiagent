@@ -1,0 +1,63 @@
+name: testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  suite:
+    # A suite inteira e offline: sobe um llama-server falso e um servidor MCP
+    # local, sem chamar nenhum modelo de verdade. Nenhuma chave e necessaria.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: pyflakes
+        run: |
+          pip install pyflakes
+          # Só o codigo do projeto. `pyflakes .` varre o .venv instalado e
+          # reporta o typing_extensions de todo mundo — ruido que esconde
+          # problema real.
+          ARQUIVOS=$(git ls-files '*.py')
+          echo "verificando $(echo "$ARQUIVOS" | wc -l) arquivos"
+          # `imported but unused` e `unable to detect undefined names` sao
+          # esperados: reexport e type: ignore. O que mata o build e o resto.
+          pyflakes $ARQUIVOS 2>&1 \
+            | grep -vE 'imported but unused|unable to detect undefined names|star imports' \
+            && { echo "::error::pyflakes achou problema"; exit 1; } \
+            || echo "pyflakes limpo"
+
+      - name: suite offline
+        run: python3 tests/run_all.py
+
+      - name: servidor MCP
+        run: python3 tests/test_mcp.py
+
+  # Os testes que batem na API ficam num workflow separado, de proposito:
+  # nao sao automaticos: eles gastam cota (20 requests/dia por modelo) e um PR nao deve
+  # queimar a cota de quem maintainer.
+  #
+  # Dispara manualmente, ou com TYPESAFE/GOOGLE no secret do repositorio.
+  api:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: linkcheck tool call
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: python3 tests/test_linkcheck_tool_call.py

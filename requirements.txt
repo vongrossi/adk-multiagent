@@ -1,0 +1,45 @@
+# Dependencias do projeto — Google ADK
+#
+# Versoes testadas: Python 3.12.3, google-adk 2.9.2
+#
+#   pip install -r requirements.txt
+#
+# ─── Nucleo ───────────────────────────────────────────────────────────
+google-adk==2.9.2
+python-dotenv==1.2.3
+
+# ─── MCP (mcp_text_audit/) ────────────────────────────────────────────
+# Servidor MCP local por stdio. O pacote `mcp` 2.x traz tanto o cliente
+# quanto o servidor; no 2.x `FastMCP` virou `MCPServer`.
+mcp==2.2.0
+
+# ─── RAG (rag/) ───────────────────────────────────────────────────────
+# `chromadb` e quem guarda o indice vetorial.
+#
+# CUIDADO com esta dependencia: o chromadb puxa opentelemetry-api>=1.45, e o
+# google-adk 2.9.2 exige <=1.42.1. Instalar o chromadb sem os pins abaixo
+# deixa o ambiente com dois requisitos conflitantes. Os pins forcam a
+# resolucao compativel — veja o bloco logo abaixo.
+chromadb==1.5.9
+
+# Pinos explicitos. A metadata do google-adk pede opentelemetry>=1.39 e o
+# chromadb puxa >=1.45, o que deixa `pip check` reclamando. Fixar aqui e o
+# que mantem o ambiente coerente depois do install.
+opentelemetry-api==1.42.1
+opentelemetry-sdk==1.42.1
+
+# ─── Opcional: llama.cpp (llamacpp.py) ────────────────────────────────
+# O backend local so precisa disto:
+#   pip install llama-cpp-python
+# Mantido fora do requirements.txt de proposito: a compilacao exige toolchain
+# C++ e o binario varia por plataforma. Aponte no README do agent.
+#
+# ─── Opcional: Triage + Jev (triage/) ─────────────────────────────────
+# O cliente do Jev em triage/jev.py faz POST com `urllib` da stdlib, entao
+# NAO precisa de SDK. Se preferir o SDK oficial:
+#   pip install typesafe-sdk
+#
+# ─── Testes ───────────────────────────────────────────────────────────
+# Deliberadamente sem pytest: cada script de teste roda sozinho, com
+# `python3 tests/<arquivo>.py`. Menos dependencia, e o `python3 tests/run_all.py`
+# continua funcionando em qualquer maquina sem install extra.
