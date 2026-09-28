@@ -54,11 +54,12 @@ def chk(desc, cond, detalhe=""):
 def pula(desc, motivo):
     """Marca um bloco como nao executado, com o motivo.
 
-    O que o CI provou: o bloco 3 falhava com `timed out after 5.0s` em todo
-    runner, e por um motivo que nao era do MCP. O `npx -y brave-search-mcp`
-    baixa o pacote da npm no primeiro uso; no runner isso estoura o timeout de
-    5s do handshake, antes de qualquer checagem deste bloco rodar. Localmente o pacote ja
-    estava em cache e passava.
+    O que o CI provou, em duas rodadas: o bloco 3 falhava com
+    `timed out after 5.0s` em todo runner. O primeiro palpite foi o download da
+    npm, e estava errado — pre-aquecer o cache no workflow nao mudou nada,
+    porque o gargalo e o boot do processo Node (~2s) contra um handshake de 5s
+    que nao sobra margem. O conserto foi o `MCP_TIMEOUT` em
+    `linkcheck/tools.py`, nao este arquivo.
 
     Sem este registro, o `PULADO` virava so mais uma linha de log e o sumico
     da prova ficava invisivel: o resumo contava quantas faltaram, e nao o que
@@ -70,19 +71,17 @@ def pula(desc, motivo):
 
 
 def npx_pronto():
-    """`npx` existe E o pacote ja esta em cache local.
+    """`npx` existe neste ambiente.
 
-    O download da npm e o que estoura o timeout de 5s do handshake no CI. Os
-    dois estados sao distinguidos porque o conserto e diferente: sem `npx` e
-    ambiente sem Node; com `npx` e cache frio. `npx -y` nao tem timeout
-    proprio, entao pre-aquecer o cache e o que resolve.
+    Uma verificacao so, e deliberadamente burra: o unico motivo legitimo para
+    pular o handshake e nao ter Node. A versao anterior checava o cache da npm
+    tambem, o que parecia mais informativa e nao era — a hipotese do cache
+    frio estava errada, e o teste carregava um palpite falso como se fosse
+    diagnostico.
     """
     if shutil.which("npx") is None:
         return False, "npx ausente (ambiente sem Node)"
-    cache = os.path.expanduser("~/.npm/_npx")
-    if os.path.isdir(cache):
-        return True, "npx com cache aquecido"
-    return False, "npx existe, mas o pacote ainda nao foi baixado (cache frio)"
+    return True, "npx presente"
 
 
 async def main():

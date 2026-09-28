@@ -57,6 +57,12 @@ jobs:
             || echo "pyflakes limpo"
 
       - name: suite offline
+        env:
+          # Subir o servidor MCP do Brave leva ~2s e o `npx` baixa o pacote da
+          # npm no primeiro uso. O default do ADK (5s) estoura nos dois casos;
+          # 180s da folga sem custo, porque so o tempo maximo muda, nao o
+          # caminho feliz.
+          MCP_TIMEOUT: "180"
         run: python3 tests/run_all.py
 
       - name: servidor MCP

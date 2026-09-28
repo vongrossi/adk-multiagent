@@ -108,6 +108,13 @@ def _conectar_busca(chave: str | None = None):
     prova a fiação; passar a de verdade prova a busca.
 
     Isolado do import para que o teste chame direto, sem reiniciar processo.
+
+    `MCP_TIMEOUT` nao e cosmetico. Medido no GitHub Actions: o servidor Brave
+    leva ~2s so para subir, e o `StdioConnectionParams` so aceita 5s de
+    handshake. Em runner frio, o boot estoura esse tempo e o `get_tools()` morre
+    com "timed out after 5.0s" — sem ser bug do MCP, que responde bem em ~19s
+    quando a maquina ja tem o pacote em cache. O default e 60s: subir um
+    processo Node por stdio e lento, e 5s era otimizacao prematura.
     """
     from google.adk.tools.mcp_tool import StdioConnectionParams
     from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
@@ -121,7 +128,8 @@ def _conectar_busca(chave: str | None = None):
                 env={"BRAVE_API_KEY": chave if chave is not None
                      else os.getenv("BRAVE_API_KEY", "")},
                 cwd=BRAVE_SEARCH_MCP["cwd"],
-            )
+            ),
+            timeout=float(os.getenv("MCP_TIMEOUT", "60")),
         ),
         tool_filter=BRAVE_SEARCH_TOOLS,
     )
