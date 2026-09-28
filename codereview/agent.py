@@ -47,22 +47,86 @@ com uma mensagem clara em vez de devolver segredo para o prompt.
 =====================================================================
 COMO RODAR
 
-    adk run codereview common.py
-    adk run codereview --file linker/agent.py
-    adk web .                                # aparece no dropdown
+    adk run codereview common.py            # o caminho vem do comando
+    adk web .                                # sem alvo: use `adk run`
 """
 
 import ast
 import os
 import re
+import sys
 
 from common import model
 from google.adk.agents import Agent, LoopAgent
 from google.adk.tools import agent_tool
 from google.genai import types
 
-ARQUIVO = None  # fixado no root_agent; a tool le SO este caminho
+# Subcomandos do `adk` e o nome da pasta do agente NAO sao caminho de arquivo.
+# Sem esta lista, `adk run codereview x.py` resolveria "codereview" como alvo
+# se o arquivo nao existisse, e `adk web .` pegaria o ".".
+_NAO_E_ARQUIVO = {
+    "run", "web", "start", "api", "agent", "create", "help", "version",
+    "codereview", "codereviewer", "adk",
+}
+
+# o que conta como "isto parece um caminho de codigo"
+_EXTENSAO_CODIGO = {
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb", ".php",
+    ".c", ".h", ".cpp", ".sh", ".sql", ".env.example", ".yaml", ".yml", ".toml",
+}
+
+
+def _resolver_alvo(argv: list[str] | None = None) -> str | None:
+    """Descobre o arquivo a revisar no argv do shell. Retorna None se nao houver.
+
+    Funcao pura e separada do import de proposito: `sys.argv` no momento em que
+    o ADK carrega o agente depende de quem chamou (o `adk run` passa o caminho
+    como query, o `adk web` nao passa nada). Deixar a decisao numa funcao que
+    recebe a lista torna ela testavel sem subir processo nenhum.
+
+    Ordem de precedencia:
+      1. `--file X` / `-f X` / `--file=X` — explicito, vence tudo.
+      2. O ultimo token que exista no disco como arquivo.
+
+    O filtro `os.path.isfile` e o que segura o resto: `adk web .` passa "." que
+    e diretorio, e uma query em portugues como "revise o linkcheck" nao existe
+    como arquivo. Nenhum dos dois vira alvo.
+    """
+    argv = list(sys.argv if argv is None else argv)
+
+    for i, token in enumerate(argv):
+        if token in ("--file", "-f"):
+            if i + 1 < len(argv):
+                return os.path.expanduser(argv[i + 1])
+        if token.startswith("--file="):
+            return os.path.expanduser(token.split("=", 1)[1])
+
+    for token in reversed(argv):
+        if token.startswith("-"):
+            continue
+        nome = os.path.basename(token)
+        if nome in _NAO_E_ARQUIVO:
+            continue
+        if os.path.isfile(token):
+            return os.path.expanduser(token)
+        # token nao existe: so aceitaria se parecer codigo, para nao engolir
+        # "revise o modulo de auth" como caminho
+        if os.path.splitext(nome)[1].lower() in _EXTENSAO_CODIGO:
+            return os.path.expanduser(token)
+    return None
+
+
+ARQUIVO = _resolver_alvo()  # fixado no import; a tool le SO este caminho
 TAMANHO_MAX = 60_000
+
+# Raiz do repositorio, derivada da posicao deste arquivo e nao do `cwd`:
+# `adk run codereview` pode ser disparado de qualquer diretorio, e um `cwd`
+# errado tornaria o confinamento inutil ou laxo demais.
+#
+# `realpath` em ambos resolve symlink, entao `ln -s ~/.ssh/id_rsa link.py`
+# nao contorna a fronteira.
+RAIZ = os.path.realpath(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))
 IGNORAR = {".env", "id_rsa", "id_ed25519", ".pem", ".key", "credentials.json"}
 
 # Heuristicas Cheap que rodam em Python antes do modelo. Nao substituem a
@@ -140,8 +204,10 @@ def ler_arquivo() -> str:
     """
     if not ARQUIVO:
         return (
-            "Nenhum arquivo indicado. Rode `adk run codereview common.py` ou "
-            "`adk run codereview --file linker/agent.py`."
+            "Nenhum arquivo indicado, entao nao ha o que revisar. "
+            "Rode `adk run codereview common.py` — o caminho vem do "
+            "comando, nao de mim. Em `adk web` nao existe caminho de "
+            "arquivo: use `adk run`."
         )
     nome = os.path.basename(ARQUIVO)
     if nome in IGNORAR or nome.endswith((".env", ".pem", ".key")):
@@ -149,9 +215,20 @@ def ler_arquivo() -> str:
             f"Arquivo '{nome}' esta na lista de ignorados: revisao nao le "
             "segredos. Revise o codigo que consome a variavel, em vez dela."
         )
-    caminho = ARQUIVO if os.path.isabs(ARQUIVO) else os.path.join(ARQUIVO)
+    caminho = os.path.realpath(os.path.expanduser(ARQUIVO))
+
+    # Confinamento a raiz do repo. O caminho vem do `argv`, nao do modelo, o
+    # que ja reduz o risco: o operador e quem roda. Mas `adk run codereview
+    # --file ~/.ssh/id_rsa` lia a chave privada e a mandava para o modelo, e
+    # um revisor de segredos que le segredos e contradicao. O `.gitignore`
+    # impede o commit; nao impede a leitura.
+    if not caminho.startswith(RAIZ + os.sep) and caminho != RAIZ:
+        return (
+            f"Arquivo fora do repositorio ({nome}). A revisao so le codigo "
+            f"deste projeto. Use um caminho dentro de {RAIZ}."
+        )
     if not os.path.isfile(caminho):
-        return f"Arquivo nao encontrado: {ARQUIVO}"
+        return f"Arquivo nao encontrado: {caminho}"
     if os.path.getsize(caminho) > TAMANHO_MAX:
         return (
             f"Arquivo tem {os.path.getsize(caminho) // 1024}KB, acima do limite "

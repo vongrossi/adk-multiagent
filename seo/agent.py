@@ -60,10 +60,15 @@ TAG_PROIBIDA = {"blog", "post", "artigo", "postagem", "texto", "tutorial"}
 
 # o slug precisa ter no maximo 4 palavras, para nao virar uma frase
 def _slug_valido(slug: str) -> bool:
+    # `c.isalnum()` sozinho NAO basta: em Python ele devolve True para 'a' com
+    # til e para 'c' com cedilha, porque sao letras Unicode. Um slug
+    # "configuracao-instalada" com acento passava pelo portao, ia para o
+    # Blogger e quebrava a URL. Exigir `isascii()` fecha o furo — o prompt ja
+    # pedia "ASCII only", agora o codigo tambem.
     return (
         bool(slug)
         and len(slug) <= LIMITE_SLUG
-        and all(c.isalnum() or c == "-" for c in slug)
+        and all(c.isascii() and (c.isalnum() or c == "-") for c in slug)
         and not slug.startswith("-")
         and not slug.endswith("-")
         and "--" not in slug
@@ -119,21 +124,50 @@ def validar_metadados(dados: dict) -> list[str]:
 
 
 def escalate_when_valid(verdict_key: str):
-    """Sai do loop quando o JSON passou na validacao de Python."""
+    """Sai do loop quando o JSON passou na validacao de Python.
+
+    Este callback e a correcao do item 5 do BACKLOG. Antes ele so olhava o
+    veredito do `SeoValidator` (o LLM) e escalava se ele comecasse com "ok".
+    `validar_metadados` existia, `metadados_prontos` existia, e nenhum dos dois
+    era chamado: o limite de 100 caracteres do titulo dependia do LLM contar
+    caracteres. Um modelo que dissesse "ok" para um titulo de 180 escapava.
+
+    Agora sao dois portoes independentes, e os dois precisam abrir:
+
+      1. `SeoValidator` responde "isso e sobre ESTE post?" (juizo semantico,
+         coisa que so o modelo faz).
+      2. `validar_metadados` responde "os limites duros batem?" (contagem,
+         proibicoes, campos obrigatorios — coisa que so o Python faz).
+
+    Se o LLM reprova, o loop segue com a lista dele. Se o LLM aprova mas o
+    Python reprova, o Python vence: o erro dele sobrescreve `seo_validation` e
+    volta para o `SeoGenerator` corrigir. Como `SeoGenerator` le
+    `{seo_validation?}`, a mensagem de erro chega nele no proximo passo.
+    """
 
     def callback(callback_context) -> "types.Content | None":
-        if str(callback_context.state.get(verdict_key, "")).strip().lower().startswith("ok"):
-            callback_context.actions.escalate = True
-            return types.Content(
-                role="model",
-                parts=[
-                    types.Part(
-                        text=f"{callback_context.agent_name}: metadados válidos, "
-                        "saindo do loop."
-                    )
-                ],
-            )
-        return None
+        veredito = str(callback_context.state.get(verdict_key, "")).strip()
+        llm_ok = veredito.lower().startswith("ok")
+
+        # Python decide os limites, independente do que o LLM falou.
+        _, erros = metadados_prontos(callback_context.state)
+
+        if erros:
+            # Sobrescreve o "ok" do LLM. Limite duro nao se negocia.
+            callback_context.state[verdict_key] = "retry: " + ", ".join(erros)
+            return None
+        if not llm_ok:
+            return None
+        callback_context.actions.escalate = True
+        return types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    text=f"{callback_context.agent_name}: metadados válidos, "
+                    "saindo do loop."
+                )
+            ],
+        )
 
     return callback
 
@@ -145,7 +179,12 @@ seo_generator = Agent(
     name="SeoGenerator",
     model=model,
     description="Generates Blogger-ready title, description, slug and tags.",
-    instruction="""
+    # f-string DE PROPÓSITO, e as chaves duplas no JSON existem por causa
+    # disso. Sem o `f`, os {LIMITE_*} iam como texto; como sao identificadores
+    # Python válidos, o ADK os tratava como placeholder de state, nao achava
+    # no state, e levantava KeyError. O agente nao degradava — quebrava.
+    # Travado por tests/test_placeholders.py.
+    instruction=f"""
     Produce publication metadata for the post below. Return ONLY a JSON object,
     no Markdown fence, no text before or after.
 
@@ -159,11 +198,11 @@ seo_generator = Agent(
     }}
 
     <post>
-    {blog_post?}
+    {{blog_post?}}
     </post>
 
     <topic>
-    {topic?}
+    {{topic?}}
     </topic>
 
     ## Rules that are checked mechanically afterwards
@@ -181,7 +220,7 @@ seo_generator = Agent(
 
     Validation errors from the previous attempt:
 
-    {seo_validation?}
+    {{seo_validation?}}
 
     - EMPTY: this is the first pass.
     - "retry": fix exactly the listed fields. Keep the ones that passed.

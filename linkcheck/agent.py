@@ -41,7 +41,7 @@ O que muda aqui e o criterio de aprovacao. O texto so passa se:
   2. toda URL tiver sido confirmada com `buscar_fontes`; e
   3. nenhuma URL estar no `LinkValidation` state de uma iteracao anterior.
 
-Se nao houver chave de busca (`GOOGLE_SEARCH_API_KEY`), o criterio 2 nao pode
+Se nao houver chave de busca (`BRAVE_API_KEY`), o criterio 2 nao pode
 ser satisfeito e o agente diz isso no veredito em vez de aprovar por omissao —
 aprovar sem provar seria exatamente o defeito que ele existe para evitar.
 
@@ -70,8 +70,8 @@ if search_tool is not None:
 # Sem a tool de busca o agente nao consegue cumprir o criterio 2, e ele avisa
 # em vez de fingir que verificou.
 SEM_BUSCA = "" if search_tool else (
-    "\n\nATENCAO: a busca nao esta disponivel nesta sessao (sem "
-    "GOOGLE_SEARCH_API_KEY). Voce NAO consegue confirmar se a fonte existe, "
+    "\n\nATENCAO: a busca nao esta disponivel nesta sessao (falta "
+    "BRAVE_API_KEY). Voce NAO consegue confirmar se a fonte existe, "
     "so se a URL responde. Se todos os links responderem 200, escreva "
     "`retry: nao foi possivel confirmar a existencia das fontes sem busca` "
     "em vez de dizer `ok`."

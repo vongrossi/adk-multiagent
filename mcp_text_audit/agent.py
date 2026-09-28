@@ -117,7 +117,7 @@ root_agent = Agent(
     ## Tools
 
     - `contar_texto` — exact character, word, line and URL counts
-    - `achar_placeholders` — unfilled `{PLACEHOLDER}` in a prompt or template
+    - `achar_placeholders` — unfilled template placeholders in a prompt
     - `achar_segredos` — hardcoded API keys, tokens and passwords
 
     ## What each is for
@@ -128,9 +128,14 @@ root_agent = Agent(
     number that passes review and breaks an API.
 
     **Placeholders.** Before sending any prompt or template onward, call
-    `achar_placeholders`. An unfilled `{LIMIte}` reaches the model as literal
-    text and it reads it without complaint, so no other check in the pipeline
-    will catch it. Report the exact placeholders found.
+    `achar_placeholders`. An unfilled placeholder — a name in curly braces —
+    reaches the model as literal text and it reads it without complaint, so no
+    other check in the pipeline will catch it. Report the exact placeholders
+    found.
+
+    Note: writing a curly-brace placeholder literally in your OWN instruction
+    is itself a bug. The ADK reads it as a state variable, does not find it, and
+    raises KeyError before the model ever runs.
 
     **Secrets.** Before a file is shared, committed, or published, call
     `achar_segredos`. Report file, line and kind. The tool redacts the value on
