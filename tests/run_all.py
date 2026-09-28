@@ -31,8 +31,23 @@ SUITE = [
     ("test_rag.py", "chunkagem e ChromaDB, com embedder falso (sem API)"),
     ("test_triage.py", "rota por confianca (jev): limiar, runner-up, fallback"),
     ("test_mcp.py", "servidor MCP real: spawn, schema, execucao, o trap do dict"),
+    ("test_placeholders.py", "nenhum {CONSTANTE} orfao: o ADK viraria KeyError"),
+    ("test_codereview_alvo.py", "codereview recebe o caminho do shell, nao do modelo"),
+    ("test_linkcheck_mcp.py", "MCP de busca: pacote certo, tool certa, conexao real"),
+    ("test_seo_gate.py", "o portao de Python manda nos limites duros, nao o LLM"),
+    ("test_ssrf.py", "a busca nao vira scanner de rede interna (SSRF)"),
     ("e2e_check.py", "ADK puro: state, output_key, callbacks, LoopAgent, AgentTool"),
 ]
+
+# Fora da suite, porque exigem coisa que nao vem no `pip install`:
+#
+#   test_local_e2e.py  precisa de um GGUF em .modelos/ e de um llama-server
+#                      de verdade (o `test_blogger_local.py` usa um servidor
+#                      FALSO, que nao pega bug de template nem de role).
+#                      Roda por conta propria:  python3 -B tests/test_local_e2e.py
+#
+# `test_linkcheck_mcp.py` fala com a busca real do Brave quando ha
+# `BRAVE_API_KEY`, e pula essa parte sem a chave.
 
 
 def main(alvos):

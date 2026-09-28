@@ -31,10 +31,11 @@ so se descobre medindo o seu proprio dataset.
 SEM CHAVE, O AGENTE AINDA FUNCIONA
 =====================================================================
 
-Sem `TYPESAFE_API_KEY` no `.env`, `disponivel()` devolve False e o agente cai
-no caminho de classificacao por texto, deixando claro na resposta que a rota
-usada foi a fallback. Degrada em vez de derrubar — o mesmo principio do
-`llamacpp.py`, que tambem e opcional.
+Sem chave de Jev no `.env` — `TYPESAFE_API_KEY` ou `OPENROUTER_API_KEY`, serve
+uma so — `disponivel()` devolve False e o agente cai no caminho de
+classificacao por texto, deixando claro na resposta que a rota usada foi a
+fallback. Degrada em vez de derrubar — o mesmo principio do `llamacpp.py`,
+que tambem e opcional.
 
 =====================================================================
 UMA CHAMADA, VARIAS PERGUNTAS
@@ -51,9 +52,66 @@ import os
 import urllib.error
 import urllib.request
 
-ENDPOINT = "https://api.typesafe.ai/v1/systemone"
-MODELO = "jev-latest"
+ENDPOINT_TYPESAFE = "https://api.typesafe.ai/v1/systemone"
+ENDPOINT_OPENROUTER = "https://openrouter.ai/api/v1/systemone"
+MODELO = os.getenv("JEV_MODELO", "jev-latest")
 TIMEOUT = 20
+
+# =====================================================================
+# DOIS CAMINHOS PARA O MESMO MODELO
+# =====================================================================
+#
+# O Jev e um System One da TypeSafe, e a TypeSafe vende o acesso direto. O
+# OpenRouter tambem o roteia, sob a propria chave e a propria cobranca. A
+# diferenca pratica que importa: a API direta da TypeSafe passou por waitlist,
+# e o OpenRouter nao. Sem conta TypeSafe, sem waitlist, sem segunda assinatura.
+#
+# A API do OpenRouter replica o payload e o formato de resposta do System One
+# (`model`, `answers`, `usage`) e mapeia o ID cru do modelo no namespace
+# deles: `jev-latest` vira `~typesafe/jev-latest`. Por isso o `MODELO` acima
+# serve para os dois caminhos, e o `classificar` nao muda nada.
+#
+# O que o OpenRouter acrescenta de util: `usage.cost` em dolar, direto na
+# resposta. O `classificar` ja repassa o `usage` inteiro, entao o custo
+# aparece sem codigo extra.
+#
+# Precedencia quando as duas chaves existem: TypeSafe primeiro, porque vai
+# direto ao fornecedor. `JEV_PROVEDOR=openrouter` inverte, o que e o que os
+# testes usam para na depender de qual chave esta na maquina.
+PROVEDOR_TYPESAFE = "typesafe"
+PROVEDOR_OPENROUTER = "openrouter"
+
+
+def _provedor() -> tuple[str, str, str] | None:
+    """Resolve `(endpoint, chave, rotulo)`, ou `None` se nao houver chave.
+
+    `None` e o que dispara o caminho de fallback do agente. A tupla e
+    calculada por chamada e nao no import: o `.env` pode ser recarregado no
+    meio do processo (e nos testes e recarregado o tempo todo), e fixar no
+    import faz o agente travar na decisao errada.
+    """
+    forca = os.getenv("JEV_PROVEDOR", "").strip().lower()
+    or_bases = {
+        PROVEDOR_TYPESAFE: (ENDPOINT_TYPESAFE, "TYPESAFE_API_KEY"),
+        PROVEDOR_OPENROUTER: (ENDPOINT_OPENROUTER, "OPENROUTER_API_KEY"),
+    }
+    if forca:
+        if forca not in or_bases:
+            return None
+        endpoint, var = or_bases[forca]
+        chave = os.getenv(var, "")
+        return (endpoint, chave, forca) if chave else None
+
+    if os.getenv("TYPESAFE_API_KEY"):
+        return ENDPOINT_TYPESAFE, os.environ["TYPESAFE_API_KEY"], PROVEDOR_TYPESAFE
+    if os.getenv("OPENROUTER_API_KEY"):
+        return (
+            ENDPOINT_OPENROUTER,
+            os.environ["OPENROUTER_API_KEY"],
+            PROVEDOR_OPENROUTER,
+        )
+    return None
+
 
 # Categorias de exemplo. Troque livremente: o `criteria` do Choice e o que
 # define o que cada categoria significa para o Jev, entao a lista abaixo e a
@@ -88,7 +146,7 @@ PERGUNTAS = {
 
 
 def disponivel() -> bool:
-    return bool(os.getenv("TYPESAFE_API_KEY"))
+    return _provedor() is not None
 
 
 def classificar(mensagem: str) -> dict:
@@ -98,8 +156,13 @@ def classificar(mensagem: str) -> dict:
     `{"erro": ...}` em vez de levantar excecao: quem chama e uma tool, e uma
     tool que lanca derruba o turno do agente.
     """
-    if not disponivel():
-        return {"erro": "TYPESAFE_API_KEY ausente no .env"}
+    destino = _provedor()
+    if destino is None:
+        return {
+            "erro": "nenhuma chave de Jev: defina OPENROUTER_API_KEY "
+            "ou TYPESAFE_API_KEY no .env"
+        }
+    endpoint, chave, rotulo = destino
     if not (mensagem or "").strip():
         return {"erro": "mensagem vazia"}
 
@@ -109,10 +172,10 @@ def classificar(mensagem: str) -> dict:
         "questions": PERGUNTAS,
     }).encode()
     req = urllib.request.Request(
-        ENDPOINT,
+        endpoint,
         data=corpo,
         headers={
-            "Authorization": f"Bearer {os.environ['TYPESAFE_API_KEY']}",
+            "Authorization": f"Bearer {chave}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -121,12 +184,17 @@ def classificar(mensagem: str) -> dict:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
             dados = json.load(r)
     except urllib.error.HTTPError as e:
-        detalhe = ""
+        # O OpenRouter aninha o motivo em `error.message`; a TypeSafe direta
+        # pode devolver texto puro. Tentar os dois evita reportar "HTTP 400: "
+        # sem causa, que e o que bug de schema parece. `bruto` comeca vazio
+        # porque `e.read()` pode levantar antes de atribuir.
+        bruto = ""
         try:
-            detalhe = json.loads(e.read().decode())["error"]["message"][:120]
+            bruto = e.read().decode()
+            detalhe = json.loads(bruto)["error"]["message"][:120]
         except Exception:
-            detalhe = e.read().decode()[:120] if e.fp else ""
-        return {"erro": f"HTTP {e.code}: {detalhe}"}
+            detalhe = bruto[:120]
+        return {"erro": f"{rotulo} HTTP {e.code}: {detalhe}"}
     except urllib.error.URLError as e:
         return {"erro": f"rede: {getattr(e, 'reason', e)}"}
     except Exception as e:
@@ -135,6 +203,7 @@ def classificar(mensagem: str) -> dict:
     return {
         "answers": dados.get("answers", {}),
         "modelo": dados.get("model"),
+        "provedor": rotulo,
         "usage": dados.get("usage", {}),
     }
 

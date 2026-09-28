@@ -24,6 +24,13 @@ from triage.agent import LIMIAR, classificar_ticket  # noqa: E402
 
 falhas = []
 
+# As chaves do `.env` da maquina nao podem decidir o resultado deste arquivo.
+# O `triage.agent` importa `common`, que chama `load_dotenv()`: com
+# `OPENROUTER_API_KEY` no `.env` de quem roda, `jev.disponivel()` vira True e
+# o bloco de fallback abaixo mede a maquina, nao o codigo.
+for _var in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "JEV_PROVEDOR"):
+    os.environ.pop(_var, None)
+
 
 def chk(desc, cond, detalhe=""):
     (print(f"  OK    {desc}") if cond else falhas.append(desc) or
@@ -94,7 +101,9 @@ os.environ.pop("TYPESAFE_API_KEY", None)
 chk("jev.indisponivel() sem chave", jev.disponivel() is False)
 r = classificar_ticket("minha fatura veio errada")
 chk("tool retorna modo fallback", r.get("modo") == "fallback", r)
-chk("tool diz qual chave falta", "TYPESAFE_API_KEY" in r.get("erro", ""), r)
+chk("tool diz qual chave falta",
+    "OPENROUTER_API_KEY" in r.get("erro", "")
+    and "TYPESAFE_API_KEY" in r.get("erro", ""), r)
 chk("tool avisa que nao ha confianca calibrada",
     "calibrada" in r.get("aviso", ""), r)
 chk("fallback NAO inventa numero de confianca",
@@ -109,6 +118,56 @@ os.environ["TYPESAFE_API_KEY"] = ""
 r = jev.classificar("teste")
 chk("devolve dict com erro, nao exception", isinstance(r, dict) and "erro" in r, r)
 del os.environ["TYPESAFE_API_KEY"]
+
+print("\n" + "=" * 62)
+print("OS DOIS CAMINHOS: TypeSafe direto e OpenRouter")
+print("=" * 62)
+print("\n- sem chave nenhuma, nenhum caminho e escolhido")
+os.environ.pop("TYPESAFE_API_KEY", None)
+os.environ.pop("OPENROUTER_API_KEY", None)
+chk("_provedor() devolve None", jev._provedor() is None)
+chk("disponivel() segue False", jev.disponivel() is False)
+
+print("\n- so a do OpenRouter: usa o gateway, nao a API direta")
+os.environ["OPENROUTER_API_KEY"] = "or-test-fake"
+destino = jev._provedor()
+chk("so existe o caminho OpenRouter", destino is not None and destino[2] == "openrouter",
+    destino)
+chk("endpoint e o do OpenRouter",
+    destino and destino[0] == "https://openrouter.ai/api/v1/systemone",
+    destino[0] if destino else "")
+chk("a chave do env e a que vai no cabecalho",
+    destino and destino[1] == "or-test-fake")
+chk("disponivel() vira True", jev.disponivel() is True)
+
+print("\n- as duas chaves: TypeSafe tem preferencia (vai direto ao fornecedor)")
+os.environ["TYPESAFE_API_KEY"] = "ts-test-fake"
+destino = jev._provedor()
+chk("TypeSafe ganha", destino and destino[2] == "typesafe", destino)
+chk("endpoint e o da TypeSafe",
+    destino and destino[0] == "https://api.typesafe.ai/v1/systemone",
+    destino[0] if destino else "")
+
+print("\n- JEV_PROVEDOR inverte a preferencia")
+os.environ["JEV_PROVEDOR"] = "openrouter"
+destino = jev._provedor()
+chk("forca OpenRouter mesmo com as duas chaves",
+    destino and destino[2] == "openrouter", destino)
+os.environ["JEV_PROVEDOR"] = "typesafe"
+chk("forca TypeSafe tambem", jev._provedor()[2] == "typesafe")
+
+print("\n- JEV_PROVEDOR invalido nao escolhe caminho nenhum")
+os.environ["JEV_PROVEDOR"] = "openai"
+chk("provedor desconhecido devolve None", jev._provedor() is None)
+chk("e disponivel() fica False", jev.disponivel() is False)
+
+print("\n- JEV_PROVEDOR apontando para uma chave ausente tambem nao inventa")
+os.environ["JEV_PROVEDOR"] = "openrouter"
+os.environ.pop("OPENROUTER_API_KEY", None)
+chk("sem a chave, forcar o provedor nao magica nada", jev._provedor() is None)
+
+for _var in ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY", "JEV_PROVEDOR"):
+    os.environ.pop(_var, None)
 
 print("\n" + "=" * 62)
 print("CONTRATO DA TOOL (o schema que o modelo ve)")

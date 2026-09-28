@@ -119,6 +119,41 @@ def _partes_para_mensagens(content: types.Content) -> list[dict[str, Any]]:
     return mensagens
 
 
+def _normalizar_roles(mensagens: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Junta mensagens de texto consecutivas do mesmo papel.
+
+    O template Jinja do Gemma 3 (e o de varias familias) exige alternancia
+    estrita `user/assistant/user/assistant` e levanta 400 em
+    `raise_exception("Conversation roles must alternate ...")` quando duas
+    mensagens de texto do mesmo papel se seguem. O ADK, ao processar respostas
+    de tools, produz exatamente isso: cada `function_response` vira um
+    `Content(role='user')` proprio.
+
+    Aqui a conversao e a unica saida possivel. As mensagens de role `tool` nao
+    sao fundidas: a API OpenAI exige uma mensagem por `tool_call_id`, e
+   模型的 template costuma esperar esse par assistant->tool intacto.
+    """
+    saida: list[dict[str, Any]] = []
+    for mensagem in mensagens:
+        papel = mensagem.get("role")
+        if (
+            saida
+            and papel == "user"
+            and saida[-1].get("role") == "user"
+            and not mensagem.get("tool_calls")
+            and not saida[-1].get("tool_calls")
+        ):
+            # Preserva a fronteira entre os blocos: sem um separador, o modelo
+            # le as duas falas como um parágrafo só e perde onde uma termina.
+            saida[-1] = {
+                **saida[-1],
+                "content": f"{saida[-1].get('content', '')}\n\n{mensagem.get('content', '')}",
+            }
+            continue
+        saida.append(mensagem)
+    return saida
+
+
 def _schema_para_json(schema: types.Schema) -> dict[str, Any]:
     """Converte um `types.Schema` (google-genai) em JSON Schema da OpenAI.
 
@@ -302,18 +337,27 @@ class LlamaCppLlm(*_BASES):  # type: ignore[misc]
             payload.pop("tools", None)
             payload.pop("tool_choice", None)
 
+        payload["messages"] = _normalizar_roles(mensagens)
+
         async with httpx.AsyncClient(timeout=TIMEOUT) as cliente:
             try:
                 resposta = await cliente.post(
                     f"{BASE_URL}/chat/completions", json=payload
                 )
-                resposta.raise_for_status()
                 corpo = resposta.json()
+                resposta.raise_for_status()
             except httpx.HTTPError as erro:
+                # O corpo do erro do llama-server e onde esta a causa real. Sem
+                # ele, um 400 por template Jinja (roles nao alternados) e
+                # indistinguivel de um 400 por `--jinja` ausente — e o primeiro
+                # nao tem nada a ver com o segundo.
+                detalhe = ""
+                if "corpo" in dir() and isinstance(corpo, dict) and corpo.get("error"):
+                    detalhe = f" Detalhe do servidor: {str(corpo['error'])[:400]}"
                 raise RuntimeError(
                     f"Falha ao falar com o llama-server em {BASE_URL}: {erro}. "
                     f"O servidor subiu? Ele foi iniciado com --jinja? "
-                    f"(sem --jinja o campo tools e ignorado)"
+                    f"(sem --jinja o campo tools e ignorado).{detalhe}"
                 ) from erro
 
         escolhas = corpo.get("choices") or []

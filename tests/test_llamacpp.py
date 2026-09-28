@@ -254,6 +254,62 @@ async def main():
     except RuntimeError as e:
         ok &= checar("levanta RuntimeError explicativo", "Nenhum modelo" in str(e), str(e)[:60])
 
+    # ---- 7. roles consecutivos: o 400 que o template do Gemma 3 exige ----
+    #
+    # Este e o teste que impede a regressao que so aparece com um modelo real.
+    # O template Jinja do Gemma 3 levanta 400 em
+    # "Conversation roles must alternate user/assistant/..." quando duas
+    # mensagens `user` de texto se seguem, e o ADK produz exatamente isso ao
+    # processar respostas de tools. O servidor falso desta suite aceitava
+    # qualquer coisa, entao so um llama-server de verdade revela o problema.
+    print("\n[7] normalizacao de roles consecutivos")
+    import llamacpp as ll7  # `ll` foi recarregado la em [5] e sumiu do cache
+    raws = [
+        {"role": "user", "content": "primeiro"},
+        {"role": "user", "content": "segundo"},
+        {"role": "assistant", "content": "resposta"},
+        {"role": "user", "content": "terceiro"},
+    ]
+    norm = ll7._normalizar_roles(raws)
+    ok &= checar("funde as duas 'user' iniciais",
+                 len(norm) == 3, f"{len(norm)} mensagens")
+    ok &= checar("preserva a ordem dos conteudos",
+                 "primeiro" in norm[0]["content"] and "segundo" in norm[0]["content"],
+                 norm[0]["content"][:60])
+    ok &= checar("separa os blocos com linha em branco",
+                 "\n\n" in norm[0]["content"], repr(norm[0]["content"][:40]))
+
+    # `tool` nao pode ser fundida: a API OpenAI exige uma mensagem por
+    # tool_call_id, e fundir perderia o vinculo com a chamada.
+    com_tool = [
+        {"role": "user", "content": "pergunta"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function",
+             "function": {"name": "t", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "r1"},
+        {"role": "tool", "tool_call_id": "c2", "content": "r2"},
+    ]
+    norm_tool = ll7._normalizar_roles(com_tool)
+    ok &= checar("NAO funde mensagens 'tool'",
+                 len([m for m in norm_tool if m["role"] == "tool"]) == 2,
+                 str(len(norm_tool)))
+
+    # caso real do ADK: system + user + resposta-de-tool-como-user
+    adk_real = [
+        {"role": "system", "content": "instrucoes"},
+        {"role": "user", "content": "use a tool"},
+        {"role": "user", "content": "Invoking tool `t` produced: `{}`."},
+        {"role": "user", "content": "e agora?"},
+    ]
+    norm_adk = ll7._normalizar_roles(adk_real)
+    ok &= checar("caso do ADK fica alternado (system + 1 user)",
+                 [m["role"] for m in norm_adk] == ["system", "user"],
+                 str([m["role"] for m in norm_adk]))
+    ok &= checar("os 3 blocos user sobrevivem no texto",
+                 all(k in norm_adk[1]["content"]
+                     for k in ("use a tool", "produced", "e agora?")),
+                 repr(norm_adk[1]["content"][:60]))
+
     servidor.shutdown()
     print("\n" + "=" * 60)
     print("RESULTADO:", "TODOS OS CHECKS PASSARAM" if ok else "HOUVE FALHAS")

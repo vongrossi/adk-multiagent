@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# Sem este bloco, o `GITHUB_TOKEN` herda o escopo largo padrao do repositorio
+# — e este workflow roda em `pull_request`, ou seja, executa codigo vindo de
+# PR, inclusive de fork. `contents: read` e o minimo de que a suite precisa
+# (o `actions/checkout` so leitura). Se algum dia um step precisar escrever,
+# que peça `contents: write` explicitamente e com justificativa.
+permissions:
+  contents: read
+
 jobs:
   suite:
     # A suite inteira e offline: sobe um llama-server falso e um servidor MCP

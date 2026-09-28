@@ -87,7 +87,10 @@ jev.decidir(answers, limiar=0.95)   # quase tudo vai pra revisão
 
 ```bash
 # 1.Pegue a chave em https://console.typesafe.ai/keys
-echo 'TYPESAFE_API_KEY=...' >> .env
+# 1. Escolha UM dos dois caminhos:
+#      OpenRouter -> https://openrouter.ai/keys  (sem waitlist)
+#      TypeSafe   -> https://console.typesafe.ai/keys
+echo 'OPENROUTER_API_KEY=...' >> .env
 
 # 2. Rode
 adk run triage "não recebi o reembolso que pedi dia 10"
@@ -129,12 +132,40 @@ r = classificar_ticket("a API está retornando 500 desde ontem")
 |---|---|---|
 | Python | ≥ 3.10 | ✅ |
 | `google-adk` | 2.9.2 | ✅ |
-| `TYPESAFE_API_KEY` | — | 🔶 recomendado |
+| `OPENROUTER_API_KEY` **ou** `TYPESAFE_API_KEY` | — | 🔶 recomendado |
 | `GOOGLE_API_KEY` | — | ✅ (modelo que apresenta) |
 
 > 💡 **O SDK oficial (`typesafe-sdk`) não é necessário.** O cliente em
 > `triage/jev.py` faz um POST com `urllib` da stdlib — zero dependência nova, e
 > o mesmo estilo de `linkcheck/tools.py`. Instale o SDK se preferir.
+
+### 🔀 Dois caminhos para o mesmo modelo
+
+O Jev é um *System One* da TypeSafe, e existem dois jeitos de chegar nele. O
+código do `triage` não sabe a diferença: a API do OpenRouter replica o payload
+e o formato de resposta do System One, e mapeia o ID cru do modelo no namespace
+deles (`jev-latest` → `~typesafe/jev-latest`).
+
+| | OpenRouter | TypeSafe direto |
+|---|---|---|
+| Onde pega a chave | `openrouter.ai/keys` | `console.typesafe.ai/keys` |
+| Waitlist | **não** | houve |
+| Conta extra | nenhuma | conta TypeSafe |
+| Preço | $0,042/1M tokens de entrada, saída grátis | idem |
+| Salto extra | 1 (o gateway) | 0 |
+| `usage.cost` em USD | sim | não |
+
+> ⚠️ **O Jev não é um modelo `:free`.** A cota gratuita de conta nova do
+> OpenRouter cobre apenas os modelos marcados com `:free`; para o Jev a API
+> responde `402 Insufficient credits` até haver saldo. Não é bug do repo — é
+> faturamento do gateway. O custo real é irrisório: um triage de ticket com
+> três perguntas gasta ~450 tokens de entrada, ou **~US$ 0,00002** por
+> chamada. A compra mínima no OpenRouter é US$ 5, com taxa de 5,5%
+> (mínimo US$ 0,80).
+
+Com as duas chaves no `.env`, a **TypeSafe tem preferência** (vai direto ao
+fornecedor). `JEV_PROVEDOR=openrouter` ou `=typesafe` inverte. `JEV_MODELO`
+sobrescreve o modelo, que por padrão é `jev-latest`.
 
 ### 🎯 Adaptar ao seu negócio
 
@@ -240,7 +271,10 @@ jev.decidir(answers, limiar=0.95)
 ### 🔌 How to use
 
 ```bash
-echo 'TYPESAFE_API_KEY=...' >> .env
+# 1. Pick ONE of the two paths:
+#      OpenRouter -> https://openrouter.ai/keys  (no waitlist)
+#      TypeSafe   -> https://console.typesafe.ai/keys
+echo 'OPENROUTER_API_KEY=...' >> .env
 adk run triage "I never got the refund I asked for on the 10th"
 ```
 
@@ -254,7 +288,7 @@ from triage.agent import root_agent, classificar_ticket
 |---|---|---|
 | Python | ≥ 3.10 | ✅ |
 | `google-adk` | 2.9.2 | ✅ |
-| `TYPESAFE_API_KEY` | — | 🔶 recommended |
+| `OPENROUTER_API_KEY` **or** `TYPESAFE_API_KEY` | — | 🔶 recommended |
 | `GOOGLE_API_KEY` | — | ✅ (presenting model) |
 
 > 💡 **The official SDK (`typesafe-sdk`) is not required.** The client in

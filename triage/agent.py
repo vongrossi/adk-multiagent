@@ -59,7 +59,8 @@ A REGRA DE ROTEAMENTO ESTA EM CODIGO, NAO NO PROMPT
 DEGRADACAO
 =====================================================================
 
-Sem `TYPESAFE_API_KEY`, o Jev e pulado e o agente classifica pelo modelo de
+Sem `OPENROUTER_API_KEY` nem `TYPESAFE_API_KEY`, o Jev e pulado e o agente
+classifica pelo modelo de
 texto, avisando explicitamente que a rota foi fallback e que a confianca
 reportada nao e calibrada. A diferenca importa: a resposta fallback diz "esta e
 uma estimativa", a resposta Jev traz a distribuicao completa. Misturar as duas
@@ -95,11 +96,13 @@ def classificar_ticket(mensagem: str) -> dict:
 
     if not jev.disponivel():
         return {
-            "erro": "TYPESAFE_API_KEY ausente no .env",
+            "erro": "nenhuma chave de Jev no .env: defina OPENROUTER_API_KEY "
+            "ou TYPESAFE_API_KEY",
             "modo": "fallback",
             "aviso": (
                 "Sem o Jev a classificacao fica sem confianca calibrada. "
-                "Adicione TYPESAFE_API_KEY ao .env para rotear por confianca."
+                "Adicione OPENROUTER_API_KEY (ou TYPESAFE_API_KEY) ao .env "
+                "para rotear por confianca."
             ),
         }
 
@@ -141,9 +144,12 @@ root_agent = Agent(
        **Frustration:** <score, as a word>
        **Why:** <the `motivo`, plus the runner-up category and its probability>
 
-    3. If the tool returns `modo: fallback`, say plainly that the answer came
-       from a text model and the confidence is not calibrated. Do not present a
-       fallback number in the same tone as a Jev confidence.
+    3. If the tool returns `modo: fallback`, say plainly that the ticket was
+       NOT routed, that there is no confidence, and that neither
+       `OPENROUTER_API_KEY` nor `TYPESAFE_API_KEY` is configured. Do not
+       classify it yourself from the text and do not
+       invent a number. A wrong route with fake confidence is worse than no
+       route: the human trusts the number and stops reading the ticket.
 
     4. If the route is `revisar`, add one sentence saying a human should look
        at it and name the two departments that were closest. A close call is

@@ -20,6 +20,20 @@ mcp==2.2.0
 # google-adk 2.9.2 exige <=1.42.1. Instalar o chromadb sem os pins abaixo
 # deixa o ambiente com dois requisitos conflitantes. Os pins forcam a
 # resolucao compativel — veja o bloco logo abaixo.
+# AVISO: `pip-audit` reporta 4 CVE nesta versao (PYSEC-2026-311, -3813, -3814,
+# -3815) e nao existe versao corrigida no PyPI — 1.5.9 e a ultima. Nao e
+# pânico, e contexto:
+#
+#   - -311 e -3814 sao injecao de codigo via `trust_remote_code` no endpoint
+#     HTTP `/api/v2/tenants/.../collections`. Este repo usa
+#     `chromadb.PersistentClient` embarcado: nao expoe servidor, nao existe
+#     rota HTTP, e `trust_remote_code` nao e ligado.
+#   - -3813 e -3815 sao falhas de autorizacao entre tenants. So importam em
+#     deploy com o servidor Chroma exposto e mais de um tenant.
+#
+# Todos os quatro exigem rede. Se algum dia este RAG virar um servico
+# compartilhado, o primeiro item a revisitar e este pin — nao ha upgrade
+# disponivel para rececar.
 chromadb==1.5.9
 
 # Pinos explicitos. A metadata do google-adk pede opentelemetry>=1.39 e o

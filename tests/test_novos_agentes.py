@@ -130,8 +130,14 @@ cr.ARQUIVO = os.path.join(RAIZ, "common.py")
 servido = cr.ler_arquivo()
 chk("aceita .py normal", servido.startswith("```py\n") and "MODEL_FALLBACK" in servido,
     servido[:38].replace("\n", " "))
-cr.ARQUIVO = "/nao/existe/xyz.py"
+# Caminho inexistente DENTRO do repo: o erro continua sendo "nao encontrado".
+# Fora do repo, nem chega na checagem de existencia — a fronteira e anterior,
+# e a mensagem e outra, porque a causa e diferente.
+cr.ARQUIVO = os.path.join(RAIZ, "nao_existe_xyz.py")
 chk("erro claro para caminho inexistente", "nao encontrado" in cr.ler_arquivo())
+cr.ARQUIVO = "/nao/existe/xyz.py"
+chk("caminho fora do repo da recusa de fronteira, nao de ausencia",
+    "fora do repositorio" in cr.ler_arquivo(), cr.ler_arquivo()[:60])
 
 print("\n" + "=" * 58)
 print("RESULTADO:", "AGENTES NOVOS OK" if ok else "FALHOU")

@@ -24,6 +24,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from _adk_compat import schema_de  # noqa: E402
 
 falhas = []
 
@@ -115,30 +118,6 @@ def main():
         print("=" * 62)
         por_nome = {t.name: t for t in lista}
         t = por_nome["contar_texto"]
-
-        def schema_de(tool):
-            """O schema da tool mora em lugares diferentes conforme a versao
-            do ADK. O que o modelo realmente ve e o declaration, entao e
-            esse que a gente checa."""
-            fn = getattr(tool, "_get_declaration", None)
-            if callable(fn):
-                d = fn()
-                if d is not None:
-                    dump = d.model_dump(exclude_none=True)
-                    # O ADK 2.9 achata o JSON Schema em
-                    # `parameters_json_schema`. Versoes outras usam
-                    # `parameters`, e o raw do MCP usa `properties` direto.
-                    for chave in ("parameters_json_schema", "parameters", "input_schema"):
-                        if dump.get(chave):
-                            return dump[chave]
-                    return dump
-            raw = getattr(tool, "raw_mcp_tool", None)
-            schema = getattr(raw, "input_schema", None) if raw else None
-            if isinstance(schema, dict):
-                return schema
-            if schema is not None and hasattr(schema, "model_dump"):
-                return schema.model_dump(exclude_none=True)
-            return {}
 
         schema = schema_de(t)
         chk("tem descricao", bool(t.description), "(vazia)")
