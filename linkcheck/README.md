@@ -66,7 +66,7 @@ O texto só passa se **todas** as três condições forem verdadeiras:
 2. Toda URL foi confirmada com `buscar_fontes`
 3. Nenhuma URL está no `LinkValidation` de uma iteração anterior
 
-Sem `GOOGLE_SEARCH_API_KEY`, o critério 2 não pode ser satisfeito — e o agente
+Sem `BRAVE_API_KEY`, o critério 2 não pode ser satisfeito — e o agente
 **diz isso no veredito em vez de aprovar por omissão**. Aprovar sem provar seria
 exatamente o defeito que ele existe para evitar.
 
@@ -74,13 +74,41 @@ exatamente o defeito que ele existe para evitar.
 
 ```bash
 # com busca (recomendado)
-echo 'TYPESAFE_API_KEY=...' >> .env      # sua chave do Google Search
-echo 'GOOGLE_SEARCH_API_KEY=...' >> .env
+echo 'BRAVE_API_KEY=...' >> .env    # https://api.search.brave.com/app/keys
 adk run linkcheck
 
 # só HTTP — o agente avisa que não confirma a existência do assunto
 adk run linkcheck
 ```
+
+> `TYPESAFE_API_KEY` **não** tem nada a ver com a busca: é o Jev, outro
+> fornecedor (`api.typesafe.ai`). Uma chave de busca ali seria mandada para a
+> TypeSafe num header `Authorization`.
+
+#### Por que Brave, e não a busca do Google
+
+Vale registrar, porque a escolha parece arbitrária e não é. A busca do Google
+era a primeira opção e **está trancada**:
+
+- A [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview)
+  está **fechada para novos clientes** desde janeiro de 2026. Quem já tinha
+  acesso migra até 1º de janeiro de 2027; quem não tinha, não consegue chave.
+- Motores novos do Programmable Search Engine são obrigados a usar “Sites to
+  search”, no máximo 50 domínios. “Search the entire web” saiu, e o formulário
+  de criação ([`/create/new`](https://programmablesearchengine.google.com/create/new))
+  responde **404**.
+- A chave do AI Studio não substitui: a API devolve
+  `401 UNAUTHENTICATED — API keys are not supported by this API`.
+
+O Google oferece Vertex/Agent AI Search como alternativa, mas isso busca o
+*seu* corpus, com mínimo de ~1.000 QPM e 50 GiB — não é "me devolve a web em
+JSON". A Brave usa o índice próprio dela, é self-serve, e tem servidor MCP.
+
+**Custo:** $5 de crédito por mês, renováveis, mais $5 por 1.000 requisições —
+dá para ~1.000 buscas/mês de graça. O crédito exige cartão no cadastro (a Brave
+diz que é anti-fraude e não cobra se você não estourar); dá para pôr limite de
+gasto no painel. A busca do Google dava 100/dia, ou ~3.000/mês, mas só para
+quem já era cliente.
 
 ```python
 from linkcheck.agent import root_agent
@@ -103,7 +131,7 @@ checar_url("https://docs.python.org/3/library/asyncio.html")
 | `google-adk` | 2.9.2 | ✅ |
 | `requests` ou `urllib` | stdlib | ✅ |
 | `GOOGLE_API_KEY` | — | ✅ (modelo) |
-| `GOOGLE_SEARCH_API_KEY` | — | 🔶 recomendado |
+| `BRAVE_API_KEY` | — | 🔶 recomendado |
 
 ### 💰 Custo
 
@@ -165,14 +193,46 @@ The text passes only if **all three** are true:
 2. Every URL was confirmed with `buscar_fontes`
 3. No URL appears in `LinkValidation` from a previous iteration
 
-Without `GOOGLE_SEARCH_API_KEY`, criterion 2 can't be satisfied — and the agent
-**says so in the verdict instead of approving by omission**. Approving without
-proof is exactly the defect this agent exists to prevent.
+Without `BRAVE_API_KEY`, criterion 2 can't be satisfied — and the agent **says
+so in the verdict instead of approving by omission**. Approving without proof is
+exactly the defect this agent exists to prevent.
+
+The search runs over MCP stdio, spawned from `npx brave-search-mcp`. That server
+exposes six tools; only `brave_web_search` is exposed to the agent. The rest
+are filtered out on purpose — `brave_image_search` and `brave_video_search` do
+not tell you whether a link exists, `brave_local_search` is about places, and
+`brave_llm_context_search` returns pre-extracted text, which would be a second
+source of truth arguing with the validator's verdict about what the page said.
+
+#### Why Brave, and not Google Search
+
+The choice is not arbitrary. Google's search API was the first option and is
+**locked down**:
+
+- The [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview)
+  is **closed to new customers** since January 2026. Existing customers
+  transition by 1 January 2027; if you did not have access, you cannot get a key.
+- New Programmable Search Engines must use "Sites to search", capped at 50
+  domains. "Search the entire web" is gone, and the creation form
+  ([`/create/new`](https://programmablesearchengine.google.com/create/new))
+  returns **404**.
+- The AI Studio key does not substitute: the API answers
+  `401 UNAUTHENTICATED — API keys are not supported by this API`.
+
+Google offers Vertex/Agent AI Search instead, but that searches *your* corpus
+with a floor of ~1,000 QPM and 50 GiB — it is not "give me the web as JSON".
+Brave runs its own index, is self-serve, and ships an MCP server.
+
+**Cost:** $5 of monthly credit, renewable, plus $5 per 1,000 requests — around
+1,000 free searches a month. The credit requires a card at signup (Brave calls
+it anti-fraud and does not charge unless you exceed it); a spending cap in the
+dashboard keeps it at that. Google's search API allowed 100/day, roughly
+3,000/month, but only for existing customers.
 
 ### 🔌 How to use
 
 ```bash
-echo 'GOOGLE_SEARCH_API_KEY=...' >> .env
+echo 'BRAVE_API_KEY=...' >> .env   # https://api.search.brave.com/app/keys
 adk run linkcheck
 ```
 
@@ -187,7 +247,7 @@ from linkcheck.agent import root_agent
 | Python | ≥ 3.10 | ✅ |
 | `google-adk` | 2.9.2 | ✅ |
 | `GOOGLE_API_KEY` | — | ✅ (model) |
-| `GOOGLE_SEARCH_API_KEY` | — | 🔶 recommended |
+| `BRAVE_API_KEY` | — | 🔶 recommended |
 
 ### 💰 Cost
 

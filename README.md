@@ -187,7 +187,22 @@ modelo por um fake roteirizado e exercita só a maquinaria do ADK.
 | `test_rag.py` | Chunkagem e ChromaDB, com embedder falso (sem API) |
 | `test_triage.py` | Rota por confiança: limiar, runner-up, fallback (sem API) |
 | `test_mcp.py` | Servidor MCP real: spawn, schema, execução, e o trap do dict |
+| `test_seo_gate.py` | O portão de Python manda nos limites duros, não no LLM |
+| `test_linkcheck_mcp.py` | MCP de busca: pacote certo, tool certa, conexão real (a busca de verdade só roda com `BRAVE_API_KEY`) |
+| `test_ssrf.py` | A busca do linkcheck não vira scanner de rede interna (SSRF) |
 | `e2e_check.py` | ADK puro: `state`, `output_key`, callbacks, `LoopAgent`, `AgentTool` |
+
+Um teste fica **fora** da suite, de propósito:
+
+| Teste | Por quê fica de fora |
+|---|---|
+| `test_local_e2e.py` | Precisa de um GGUF de verdade (806 MB ou 2,4 GB) e de um `llama-server` de verdade. É o único que pega bug de template Jinja e de alternância de roles — o servidor falso da suite aceita qualquer payload, então um prompt quebrado passaria nele e quebraria com um modelo real. |
+
+```bash
+# com o modelo em .modelos/ e o server no ar:
+python3 -B tests/test_local_e2e.py
+```
+
 
 Não usam `pytest` de propósito: o `requirements.txt` não depende dele, e cada
 script continua rodando sozinho. `run_all.py` isola cada teste num subprocesso
@@ -293,9 +308,12 @@ Ele usa **duas** ferramentas porque cada uma pega um defeito diferente:
 `buscar_fontes` confirma que a página existe sobre o assunto (mata a URL
 inventada). So um dos dois deixa passar um defeito.
 
-Sem `GOOGLE_SEARCH_API_KEY` no `.env`, a busca não entra e o agente avisa que
-só pode conferir se a URL responde — em vez de aprovar por omissão, que seria
-exatamente o defeito que ele existe para evitar.
+A busca é do **Brave**, não do Google: a Custom Search JSON API do Google está
+fechada para novos clientes desde jan/2026 e o PSE novo não aceita mais busca
+na web inteira (ver `BACKLOG.md` item 2). Sem `BRAVE_API_KEY` no `.env`, a
+busca não entra e o agente avisa que só pode conferir se a URL responde — em
+vez de aprovar por omissão, que seria exatamente o defeito que ele existe para
+evitar.
 
 ### `seo` — metadados prontos para publicar
 
@@ -456,6 +474,31 @@ Baixe de <https://huggingface.co/ggml-org> (repos `gemma-3-4b-it-GGUF`,
 `gemma-3-12b-it-GGUF`) e ponha o `.gguf` num diretório, por exemplo
 `~/modelos/`.
 
+#### Números medidos (1 e 4B, CPU, sem CUDA)
+
+Medi o 1B e o 4B quantizados num Ryzen sem GPU (`-ngl 99` sem efeito, o
+llama.cpp cai para CPU). Serve de referência, não de promessa:
+
+| | 1B | 4B |
+|---|---|---|
+| RAM no load | ~1,2 GB | ~3,0 GB |
+| Velocidade | ~14 tok/s | ~9 tok/s |
+| "a cor do céu?" | `Azul.` | `Azul.` |
+| 17 × 23 | `391` | `391` |
+| Pede tool (formato emulado) | acerta | acerta |
+
+O que isso **não** diz: os dois acertaram nas perguntas curtas. O divisor real
+aparece no pipeline longo — o `Blogger` completo (outline → post → validação)
+levou **~9 minutos no 4B em CPU** e produziu o post com o JSON esperado. É
+funcional, mas para iterar rápido você quer CUDA; sem GPU, use o 4B só para
+verificar que a fiação anda, não para medir qualidade de escrita.
+
+O 1B passa nos testes curtos acima, mas isso não o torna usável como agente:
+com 3 GB de folga para contexto e um `LoopAgent` que pode iterar 3 vezes, a
+margem de erro dele aparece como `retry` infinite, não como resposta ruim. A
+tabela do topo ("só teste") vale mais que a lista de acertos.
+
+
 ### 3. Suba o servidor
 
 ```bash
@@ -468,6 +511,29 @@ llama-server -m ~/modelos/gemma-3-12b-it-Q4_K_M.gguf --jinja -c 8192 -ngl 99 --p
 | `-ngl 99` | joga todas as camadas na GPU. Sem GPU, use `-ngl 0` |
 | `-c 8192` | contexto. O Blogger precisa de folga: outline + post cabem juntos |
 | `-np 1` | um slot só. Mais slots competem pela VRAM |
+
+> **O `--jinja` resolve um 400, mas não é a única causa de 400.**
+>
+> O template do Gemma 3 exige alternância estrita
+> `user/assistant/user/assistant` e levanta
+> `Jinja Exception: Conversation roles must alternate...` quando duas
+> mensagens de texto do mesmo papel se seguem. O ADK produz exatamente isso
+> ao processar respostas de tools: cada `function_response` vira um
+> `Content(role='user')` próprio, então o segundo turno já é `user` de novo.
+>
+> O `llamacpp.py` resolve com `_normalizar_roles()`, que funde as mensagens de
+> texto consecutivas do mesmo papel (separadas por linha em branco, para o
+> modelo não ler as duas falas como um parágrafo só). Mensagens de role `tool`
+> **não** são fundidas: a API OpenAI exige uma por `tool_call_id`.
+>
+> Isso só aparece com um llama-server de verdade. O `test_llamacpp.py` sobe um
+> servidor **falso**, que aceita qualquer payload — por isso existe
+> `tests/test_local_e2e.py`, para o GGUF real.
+>
+> Se você ver esse erro, o corpo da resposta do servidor tem o motivo. O
+> `llamacpp.py` passou a incluir o corpo do erro na `RuntimeError` justamente
+> para isso: antes, um 400 de template e um 400 por `--jinja` ausente eram
+> indistinguíveis na tela.
 
 Teste antes de ligar no agente:
 

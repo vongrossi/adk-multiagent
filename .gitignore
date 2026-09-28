@@ -145,3 +145,11 @@ scratch/
 *.orig
 *.rej
 *~
+
+# ══════════════════════════════════════════════════════════════════════
+#  MODELOS LOCAIS
+# ══════════════════════════════════════════════════════════════════════
+# `.modelos/` guarda os GGUF do llama.cpp (Gemma 3 1B/4B, ~800 MB e 2,4 GB).
+# Sao binario de terceiro, nao codigo deste projeto, e versionar 3 GB no Git
+# nao funciona de verdade. `.env` aponta `llamacpp_model` para o caminho.
+.modelos/
