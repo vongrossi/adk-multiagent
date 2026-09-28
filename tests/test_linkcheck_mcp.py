@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _adk_compat import nomes_das_tools, schema_de  # noqa: E402
 
 falhas = []
+pulados = []
 
 
 def chk(desc, cond, detalhe=""):
@@ -48,6 +49,40 @@ def chk(desc, cond, detalhe=""):
         falhas.append(desc)
         print(f"  FALHA {desc}  {detalhe}")
     return cond
+
+
+def pula(desc, motivo):
+    """Marca um bloco como nao executado, com o motivo.
+
+    O que o CI provou: o bloco 3 falhava com `timed out after 5.0s` em todo
+    runner, e por um motivo que nao era do MCP. O `npx -y brave-search-mcp`
+    baixa o pacote da npm no primeiro uso; no runner isso estoura o timeout de
+    5s do handshake, antes de qualquer checagem deste bloco rodar. Localmente o pacote ja
+    estava em cache e passava.
+
+    Sem este registro, o `PULADO` virava so mais uma linha de log e o sumico
+    da prova ficava invisivel: o resumo contava quantas faltaram, e nao o que
+    nao chegou a ser testado. Pular em silencio e o jeito mais barato de
+    perder cobertura sem ninguem perceber.
+    """
+    print(f"  PULADO  {desc} -- {motivo}")
+    pulados.append((desc, motivo))
+
+
+def npx_pronto():
+    """`npx` existe E o pacote ja esta em cache local.
+
+    O download da npm e o que estoura o timeout de 5s do handshake no CI. Os
+    dois estados sao distinguidos porque o conserto e diferente: sem `npx` e
+    ambiente sem Node; com `npx` e cache frio. `npx -y` nao tem timeout
+    proprio, entao pre-aquecer o cache e o que resolve.
+    """
+    if shutil.which("npx") is None:
+        return False, "npx ausente (ambiente sem Node)"
+    cache = os.path.expanduser("~/.npm/_npx")
+    if os.path.isdir(cache):
+        return True, "npx com cache aquecido"
+    return False, "npx existe, mas o pacote ainda nao foi baixado (cache frio)"
 
 
 async def main():
@@ -124,8 +159,9 @@ async def main():
     #
     # Isso e uma melhoria sobre o teste do Google, onde sem as duas chaves o
     # bloco pulava inteiro — o teste passava sem nunca ter conectado a nada.
-    if shutil.which("npx") is None:
-        print("  PULADO  npx ausente neste ambiente")
+    pode, motivo = npx_pronto()
+    if not pode:
+        pula("bloco 3: handshake real com o servidor Brave", motivo)
     else:
         set_ = None
         try:
@@ -162,10 +198,12 @@ async def main():
     # Ate aqui provamos a fiaacao. Isto prova que a busca acontece — e e o
     # unico jeito de saber que a chave e valida, porque uma chave expirada
     # so falha aqui, nunca no `tools/list`.
-    if shutil.which("npx") is None:
-        print("  PULADO  npx ausente")
+    pode, motivo = npx_pronto()
+    if not pode:
+        pula("bloco 4: handshake com chave real", motivo)
     elif not os.getenv("BRAVE_API_KEY"):
-        print("  PULADO  sem BRAVE_API_KEY (a fiaacao acima ja foi provada)")
+        pula("bloco 4: busca de verdade",
+             "sem BRAVE_API_KEY (a fiacao acima ja foi provada)")
     else:
         set_ = None
         try:
@@ -290,6 +328,13 @@ async def main():
         for f in falhas:
             print(f"  - {f}")
         return 1
+    # O resumo e onde o `PULADO` vira fato. Sem esta lista, o resultado "sem
+    # falhas" se confunde com "tudo testado" — e o CI ja escondeu uma falha
+    # real do Brave exatamente por causa dessa confusao.
+    if pulados:
+        print(f"{len(pulados)} bloco(s) nao executado(s):")
+        for desc, motivo in pulados:
+            print(f"  - {desc}: {motivo}")
     print("o MCP de busca aponta para o pacote certo e abre conexao de verdade")
     return 0
 

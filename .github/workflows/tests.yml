@@ -30,6 +30,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # O teste do Brave precisa de `npx`. Sem este passo o bloco 3 pulava
+      # e a suite reportava 15/15 sem nunca ter conectado no servidor MCP de
+      # busca — o que e pior que falhar, porque parece cobertura.
+      - name: preparar o cache do npx
+        run: |
+          npm --version
+          # Pre-aquece o pacote: o handshake do MCP tem timeout de 5s e o
+          # download da npm estoura esse tempo no primeiro uso. Pre-aquecendo
+          # aqui, o teste encontra o pacote em cache e o handshake cabe.
+          npx -y brave-search-mcp@latest --help || true
+
       - name: pyflakes
         run: |
           pip install pyflakes
